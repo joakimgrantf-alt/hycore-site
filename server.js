@@ -206,6 +206,29 @@ const fileListHtml = files.length
       })
       .join("")
   : "<li>No files yet</li>";
+    const users = await new Promise((resolve) => {
+  if (!isAdmin) return resolve([]);
+  db.all("SELECT id, username, role FROM users ORDER BY role DESC, username ASC", [], (err, rows) => {
+    resolve(err ? [] : rows);
+  });
+});
+
+const userListHtml = isAdmin
+  ? (users.length
+      ? users.map(u => `
+        <li>
+          <strong>${u.username}</strong> <small>(${u.role}, id=${u.id})</small>
+          ${u.id === req.session.userId ? `<em style="margin-left:10px;">(you)</em>` : `
+            <form method="POST" action="/admin/delete-user" style="display:inline; margin-left:10px;"
+                  onsubmit="return confirm('Delete user ${u.username}?');">
+              <input type="hidden" name="userId" value="${u.id}">
+              <button type="submit">Delete user</button>
+            </form>
+          `}
+        </li>
+      `).join("")
+      : "<li>No users found</li>")
+  : "";
     const html = `
       <!doctype html>
       <html>
@@ -225,6 +248,12 @@ ${isAdmin ? `
   <input name="password" type="password" placeholder="password" required>
   <button type="submit">Create</button>
 </form>
+` : ""}
+${isAdmin ? `
+<h3>Current users (admin)</h3>
+<ul>
+  ${userListHtml}
+</ul>
 ` : ""}
           <h3>Uploaded files</h3>
 <ul>
@@ -313,6 +342,37 @@ app.post("/admin/delete", requireLogin, requireAdmin, async (req, res) => {
   } catch (e) {
     return res.status(500).send("Delete failed.");
   }
+});
+app.post("/admin/delete-user", requireLogin, requireAdmin, (req, res) => {
+  const userId = Number(req.body.userId);
+  if (!Number.isInteger(userId)) return res.status(400).send("Invalid userId");
+
+  // Don't allow admin to delete themselves (saves you from chaos)
+  if (userId === req.session.userId) {
+    return res.status(400).send("You cannot delete your own account.");
+  }
+
+  // Optional: prevent deleting the last admin
+  db.get("SELECT role FROM users WHERE id = ?", [userId], (err, target) => {
+    if (err || !target) return res.status(404).send("User not found");
+
+    if (target.role === "admin") {
+      db.get("SELECT COUNT(*) AS n FROM users WHERE role='admin'", [], (err2, row) => {
+        if (err2) return res.status(500).send("DB error");
+        if ((row?.n || 0) <= 1) return res.status(400).send("Cannot delete the last admin.");
+
+        db.run("DELETE FROM users WHERE id = ?", [userId], (err3) => {
+          if (err3) return res.status(500).send("Delete failed");
+          res.redirect("/steering");
+        });
+      });
+    } else {
+      db.run("DELETE FROM users WHERE id = ?", [userId], (err3) => {
+        if (err3) return res.status(500).send("Delete failed");
+        res.redirect("/steering");
+      });
+    }
+  });
 });
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
