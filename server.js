@@ -182,6 +182,30 @@ const me = await new Promise((resolve) => {
   );
 });
 const isAdmin = me.role === "admin";
+const fileListHtml = files.length
+  ? files
+      .map((f) => {
+        const deleteHtml = isAdmin
+          ? `
+            <form method="POST" action="/admin/delete" style="display:inline; margin-left:10px;"
+                  onsubmit="return confirm('Delete ${f.name}? This cannot be undone.');">
+              <input type="hidden" name="key" value="${f.key}">
+              <input type="text" name="confirm" placeholder="Type DELETE" required style="width:110px;">
+              <button type="submit">Delete</button>
+            </form>
+          `
+          : "";
+
+        return `
+          <li>
+            <a href="/download?key=${encodeURIComponent(f.key)}">${f.name}</a>
+            <small>(${Math.round(f.size / 1024)} KB, ${f.lastModified})</small>
+            ${deleteHtml}
+          </li>
+        `;
+      })
+      .join("")
+  : "<li>No files yet</li>";
     const html = `
       <!doctype html>
       <html>
@@ -203,27 +227,9 @@ ${isAdmin ? `
 </form>
 ` : ""}
           <h3>Uploaded files</h3>
-          <ul>
-            ${
-              files.length
-                ${files.map(f => `
-  <li>
-    <a href="/download?key=${encodeURIComponent(f.key)}">${f.name}</a>
-    <small>(${Math.round(f.size / 1024)} KB, ${f.lastModified})</small>
-
-    ${isAdmin ? `
-      <form method="POST" action="/admin/delete" style="display:inline; margin-left:10px;"
-            onsubmit="return confirm('Delete ${f.name}? This cannot be undone.');">
-        <input type="hidden" name="key" value="${f.key}">
-        <input type="text" name="confirm" placeholder='Type DELETE' required style="width:110px;">
-        <button type="submit">Delete</button>
-      </form>
-    ` : ""}
-  </li>
-`).join("")}
-                : "<li>No files yet</li>"
-            }
-          </ul>
+<ul>
+  ${fileListHtml}
+</ul>
 
           <p><small>Non-sensitive documents only (protocols, eCRF plans, funding).</small></p>
         </body>
