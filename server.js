@@ -34,9 +34,10 @@ const db = new sqlite3.Database("./database.db");
 db.run(`CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY,
   username TEXT UNIQUE,
-  password TEXT
+  password TEXT,
+  role TEXT DEFAULT 'member'
 )`);
-
+db.run(`ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'member'`, () => {});
 // Create initial admin user (first run)
 async function createAdminOnce() {
   const username = process.env.INIT_ADMIN_USER || "admin";
@@ -44,9 +45,12 @@ async function createAdminOnce() {
 
   const hashed = await bcrypt.hash(password, 10);
   db.run(
-    "INSERT OR IGNORE INTO users (username, password) VALUES (?, ?)",
-    [username, hashed]
-  );
+  "INSERT OR IGNORE INTO users (username, password, role) VALUES (?, ?, ?)",
+  [username, hashed, "admin"]
+);
+
+// Ensure admin role is correct
+db.run("UPDATE users SET role='admin' WHERE username = ?", [username]);
 }
 createAdminOnce();
 
@@ -127,8 +131,8 @@ app.post("/admin/create-user", requireLogin, async (req, res) => {
 
   const hashed = await bcrypt.hash(password, 10);
   db.run(
-    "INSERT INTO users (username, password) VALUES (?, ?)",
-    [username, hashed],
+  "INSERT INTO users (username, password, role) VALUES (?, ?, 'member')",
+  [username, hashed],
     (err) => {
       if (err) return res.status(400).send("User already exists or error");
       res.redirect("/steering");
