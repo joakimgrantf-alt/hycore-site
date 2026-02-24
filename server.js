@@ -87,7 +87,7 @@ if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY || !R2_BUCKET) 
     "Missing R2 env vars. Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET."
   );
 }
-
+const FOLDERS = ["General", "Copenhagen", "Utrecht", "Leuven", "Misc"];
 const s3 = new S3Client({
   region: "auto",
   endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
@@ -154,13 +154,17 @@ app.post("/admin/create-user", requireLogin, requireAdmin, async (req, res) => {
 app.get("/logout", (req, res) => {
   req.session.destroy(() => res.redirect("/"));
 });
-
+<p><a href="/logout">Logout</a></p>
+${folderNavHtml}
 app.get("/steering", requireLogin, async (req, res) => {
   try {
     const list = await s3.send(
       new ListObjectsV2Command({
         Bucket: R2_BUCKET,
-        Prefix: "steering/",
+        Prefix: prefix,
+    const selectedFolderRaw = (req.query.folder || "General").toString().trim();
+    const selectedFolder = FOLDERS.includes(selectedFolderRaw) ? selectedFolderRaw : "General";
+    const prefix = `steering/${selectedFolder}/`;
       })
     );
 
@@ -264,6 +268,17 @@ const userListHtml = isAdmin
         }).join("")
       : "<li>No users found</li>")
   : "";
+  const folderNavHtml = `
+  <h3>Folders</h3>
+  <ul>
+    ${FOLDERS.map(f => `
+      <li>
+        <a href="/steering?folder=${encodeURIComponent(f)}">${f}</a>
+        ${f === selectedFolder ? "<strong> (current)</strong>" : ""}
+      </li>
+    `).join("")}
+  </ul>
+`;
     const html = `
       <!doctype html>
       <html>
@@ -273,9 +288,13 @@ const userListHtml = isAdmin
           <p><a href="/logout">Logout</a></p>
 
           <form action="/upload" method="POST" enctype="multipart/form-data">
-            <input type="file" name="file" required>
-            <button type="submit">Upload</button>
-          </form>
+  <label>Upload to:</label>
+  <select name="folder" required>
+    ${FOLDERS.map(f => `<option value="${f}" ${f === selectedFolder ? "selected" : ""}>${f}</option>`).join("")}
+  </select>
+  <input type="file" name="file" required>
+  <button type="submit">Upload</button>
+</form>
 ${isAdmin ? `
 <h3>Create user (admin)</h3>
 <form method="POST" action="/admin/create-user">
@@ -309,7 +328,9 @@ app.post("/upload", requireLogin, upload.single("file"), async (req, res) => {
     if (!req.file) return res.redirect("/steering");
 
     const safeName = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const key = `steering/${Date.now()}/${safeName}`;
+    const folderRaw = (req.body.folder || "General").toString().trim();
+    const folder = FOLDERS.includes(folderRaw) ? folderRaw : "General";
+    const key = `steering/${folder}/${Date.now()}/${safeName}`;
 
     await s3.send(
       new PutObjectCommand({
