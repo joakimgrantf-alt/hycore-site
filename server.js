@@ -61,7 +61,18 @@ function requireLogin(req, res, next) {
   if (!req.session.userId) return res.redirect("/login.html");
   next();
 }
-
+function requireAdmin(req, res, next) {
+  db.get(
+    "SELECT role FROM users WHERE id = ?",
+    [req.session.userId],
+    (err, row) => {
+      if (err || !row || row.role !== "admin") {
+        return res.status(403).send("Admins only");
+      }
+      next();
+    }
+  );
+}
 // --------------------
 // Cloudflare R2 (S3 API)
 // --------------------
@@ -125,7 +136,7 @@ app.post("/login", (req, res) => {
     }
   );
 });
-app.post("/admin/create-user", requireLogin, async (req, res) => {
+app.post("/admin/create-user", requireLogin, requireAdmin, async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).send("Missing fields");
 
@@ -161,7 +172,15 @@ app.get("/steering", requireLogin, async (req, res) => {
         size: o.Size || 0,
         lastModified: o.LastModified ? new Date(o.LastModified).toISOString().slice(0, 10) : "",
       }));
-
+// --- Determine if current user is admin ---
+const me = await new Promise((resolve) => {
+  db.get(
+    "SELECT role FROM users WHERE id = ?",
+    [req.session.userId],
+    (err, row) => resolve(row || { role: "member" })
+  );
+});
+const isAdmin = me.role === "admin";
     const html = `
       <!doctype html>
       <html>
@@ -174,12 +193,14 @@ app.get("/steering", requireLogin, async (req, res) => {
             <input type="file" name="file" required>
             <button type="submit">Upload</button>
           </form>
+${isAdmin ? `
 <h3>Create user (admin)</h3>
 <form method="POST" action="/admin/create-user">
   <input name="username" placeholder="username" required>
   <input name="password" type="password" placeholder="password" required>
   <button type="submit">Create</button>
 </form>
+` : ""}
           <h3>Uploaded files</h3>
           <ul>
             ${
