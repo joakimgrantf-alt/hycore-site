@@ -154,17 +154,18 @@ app.post("/admin/create-user", requireLogin, requireAdmin, async (req, res) => {
 app.get("/logout", (req, res) => {
   req.session.destroy(() => res.redirect("/"));
 });
-<p><a href="/logout">Logout</a></p>
-${folderNavHtml}
+
+
 app.get("/steering", requireLogin, async (req, res) => {
   try {
+    const selectedFolderRaw = (req.query.folder || "General").toString().trim();
+    const selectedFolder = FOLDERS.includes(selectedFolderRaw) ? selectedFolderRaw : "General";
+    const prefix = `steering/${selectedFolder}/`;
     const list = await s3.send(
       new ListObjectsV2Command({
         Bucket: R2_BUCKET,
         Prefix: prefix,
-    const selectedFolderRaw = (req.query.folder || "General").toString().trim();
-    const selectedFolder = FOLDERS.includes(selectedFolderRaw) ? selectedFolderRaw : "General";
-    const prefix = `steering/${selectedFolder}/`;
+    
       })
     );
 
@@ -268,7 +269,7 @@ const userListHtml = isAdmin
         }).join("")
       : "<li>No users found</li>")
   : "";
-  const folderNavHtml = `
+const folderNavHtml = `
   <h3>Folders</h3>
   <ul>
     ${FOLDERS.map(f => `
@@ -286,6 +287,7 @@ const userListHtml = isAdmin
         <body>
           <h2>Steering Documents</h2>
           <p><a href="/logout">Logout</a></p>
+          ${folderNavHtml}
 
           <form action="/upload" method="POST" enctype="multipart/form-data">
   <label>Upload to:</label>
