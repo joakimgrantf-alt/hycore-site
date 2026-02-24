@@ -215,18 +215,53 @@ const fileListHtml = files.length
 
 const userListHtml = isAdmin
   ? (users.length
-      ? users.map(u => `
-        <li>
-          <strong>${u.username}</strong> <small>(${u.role}, id=${u.id})</small>
-          ${u.id === req.session.userId ? `<em style="margin-left:10px;">(you)</em>` : `
+      ? users.map(u => {
+          const isMe = u.id === req.session.userId;
+          const roleLabel = u.role;
+
+          const promoteDemote = u.role === "admin"
+            ? (isMe ? `<em style="margin-left:10px;">(you)</em>` : `
+                <form method="POST" action="/admin/demote" style="display:inline; margin-left:10px;"
+                      onsubmit="return confirm('Demote ${u.username} from admin to member?');">
+                  <input type="hidden" name="userId" value="${u.id}">
+                  <button type="submit">Demote</button>
+                </form>
+              `)
+            : `
+                <form method="POST" action="/admin/promote" style="display:inline; margin-left:10px;"
+                      onsubmit="return confirm('Promote ${u.username} to admin?');">
+                  <input type="hidden" name="userId" value="${u.id}">
+                  <button type="submit">Promote</button>
+                </form>
+              `;
+
+          const resetPw = `
+            <form method="POST" action="/admin/reset-password" style="display:inline; margin-left:10px;"
+                  onsubmit="return confirm('Reset password for ${u.username}?');">
+              <input type="hidden" name="userId" value="${u.id}">
+              <input type="password" name="newPassword" placeholder="New password" required style="width:160px;">
+              <button type="submit">Reset</button>
+            </form>
+          `;
+
+          const deleteUser = isMe ? "" : `
             <form method="POST" action="/admin/delete-user" style="display:inline; margin-left:10px;"
                   onsubmit="return confirm('Delete user ${u.username}?');">
               <input type="hidden" name="userId" value="${u.id}">
-              <button type="submit">Delete user</button>
+              <button type="submit">Delete</button>
             </form>
-          `}
-        </li>
-      `).join("")
+          `;
+
+          return `
+            <li>
+              <strong>${u.username}</strong> <small>(${roleLabel}, id=${u.id})</small>
+              ${isMe ? `<em style="margin-left:10px;">(you)</em>` : ""}
+              ${promoteDemote}
+              ${resetPw}
+              ${deleteUser}
+            </li>
+          `;
+        }).join("")
       : "<li>No users found</li>")
   : "";
     const html = `
@@ -374,6 +409,59 @@ app.post("/admin/delete-user", requireLogin, requireAdmin, (req, res) => {
     }
   });
 });
+app.post("/admin/reset-password", requireLogin, requireAdmin, async (req, res) => {
+  try {
+    const userId = Number(req.body.userId);
+    const newPassword = (req.body.newPassword || "").trim();
+
+    if (!Number.isInteger(userId)) return res.status(400).send("Invalid userId");
+    if (newPassword.length < 10) return res.status(400).send("Password must be at least 10 characters.");
+
+    const hashed = await bcrypt.hash(newPassword, 10);
+
+    db.run("UPDATE users SET password = ? WHERE id = ?", [hashed, userId], (err) => {
+      if (err) return res.status(500).send("Password reset failed.");
+      res.redirect("/steering");
+    });
+  } catch (e) {
+    res.status(500).send("Password reset failed.");
+  }
+});
+app.post("/admin/promote", requireLogin, requireAdmin, (req, res) => {
+  const userId = Number(req.body.userId);
+  if (!Number.isInteger(userId)) return res.status(400).send("Invalid userId");
+
+  db.run("UPDATE users SET role='admin' WHERE id = ?", [userId], (err) => {
+    if (err) return res.status(500).send("Promote failed.");
+    res.redirect("/steering");
+  });
+});
+app.post("/admin/demote", requireLogin, requireAdmin, (req, res) => {
+  const userId = Number(req.body.userId);
+  if (!Number.isInteger(userId)) return res.status(400).send("Invalid userId");
+
+  // Don't let admin demote themselves (optional but sensible)
+  if (userId === req.session.userId) {
+    return res.status(400).send("You cannot demote your own account.");
+  }
+
+  // Ensure we're not demoting the last admin
+  db.get("SELECT role FROM users WHERE id = ?", [userId], (err, target) => {
+    if (err || !target) return res.status(404).send("User not found");
+    if (target.role !== "admin") return res.redirect("/steering"); // already not admin
+
+    db.get("SELECT COUNT(*) AS n FROM users WHERE role='admin'", [], (err2, row) => {
+      if (err2) return res.status(500).send("DB error");
+      if ((row?.n || 0) <= 1) return res.status(400).send("Cannot demote the last admin.");
+
+      db.run("UPDATE users SET role='member' WHERE id = ?", [userId], (err3) => {
+        if (err3) return res.status(500).send("Demote failed.");
+        res.redirect("/steering");
+      });
+    });
+  });
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
