@@ -169,7 +169,7 @@ app.get("/steering", requireLogin, async (req, res) => {
       .sort((a, b) => (b.LastModified?.getTime?.() || 0) - (a.LastModified?.getTime?.() || 0))
       .map((o) => ({
         key: o.Key,
-        name: o.Key.replace("steering/", ""),
+        name: o.Key.split("/").pop(),
         size: o.Size || 0,
         lastModified: o.LastModified ? new Date(o.LastModified).toISOString().slice(0, 10) : "",
       }));
@@ -245,7 +245,7 @@ app.post("/upload", requireLogin, upload.single("file"), async (req, res) => {
     if (!req.file) return res.redirect("/steering");
 
     const safeName = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const key = `steering/${Date.now()}-${safeName}`;
+    const key = `steering/${Date.now()}/${safeName}`;
 
     await s3.send(
       new PutObjectCommand({
