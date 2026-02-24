@@ -10,6 +10,7 @@ const {
   PutObjectCommand,
   ListObjectsV2Command,
   GetObjectCommand,
+  DeleteObjectCommand,
 } = require("@aws-sdk/client-s3");
 
 const app = express();
@@ -205,15 +206,21 @@ ${isAdmin ? `
           <ul>
             ${
               files.length
-                ? files
-                    .map(
-                      (f) =>
-                        `<li>
-                          <a href="/download?key=${encodeURIComponent(f.key)}">${f.name}</a>
-                          <small>(${Math.round(f.size / 1024)} KB, ${f.lastModified})</small>
-                        </li>`
-                    )
-                    .join("")
+                ${files.map(f => `
+  <li>
+    <a href="/download?key=${encodeURIComponent(f.key)}">${f.name}</a>
+    <small>(${Math.round(f.size / 1024)} KB, ${f.lastModified})</small>
+
+    ${isAdmin ? `
+      <form method="POST" action="/admin/delete" style="display:inline; margin-left:10px;"
+            onsubmit="return confirm('Delete ${f.name}? This cannot be undone.');">
+        <input type="hidden" name="key" value="${f.key}">
+        <input type="text" name="confirm" placeholder='Type DELETE' required style="width:110px;">
+        <button type="submit">Delete</button>
+      </form>
+    ` : ""}
+  </li>
+`).join("")}
                 : "<li>No files yet</li>"
             }
           </ul>
@@ -274,7 +281,33 @@ app.get("/download", requireLogin, async (req, res) => {
     res.status(404).send("File not found.");
   }
 });
+app.post("/admin/delete", requireLogin, requireAdmin, async (req, res) => {
+  try {
+    const key = req.body.key;
+    const confirm = req.body.confirm;
 
+    // Guardrails
+    if (!key || typeof key !== "string" || !key.startsWith("steering/")) {
+      return res.status(400).send("Invalid key.");
+    }
+
+    // Optional confirmation to reduce accidents
+    if (confirm !== "DELETE") {
+      return res.status(400).send('Type "DELETE" to confirm deletion.');
+    }
+
+    await s3.send(
+      new DeleteObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: key,
+      })
+    );
+
+    return res.redirect("/steering");
+  } catch (e) {
+    return res.status(500).send("Delete failed.");
+  }
+});
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
