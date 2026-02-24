@@ -121,7 +121,20 @@ app.post("/login", (req, res) => {
     }
   );
 });
+app.post("/admin/create-user", requireLogin, async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) return res.status(400).send("Missing fields");
 
+  const hashed = await bcrypt.hash(password, 10);
+  db.run(
+    "INSERT INTO users (username, password) VALUES (?, ?)",
+    [username, hashed],
+    (err) => {
+      if (err) return res.status(400).send("User already exists or error");
+      res.redirect("/steering");
+    }
+  );
+});
 app.get("/logout", (req, res) => {
   req.session.destroy(() => res.redirect("/"));
 });
@@ -157,7 +170,12 @@ app.get("/steering", requireLogin, async (req, res) => {
             <input type="file" name="file" required>
             <button type="submit">Upload</button>
           </form>
-
+<h3>Create user (admin)</h3>
+<form method="POST" action="/admin/create-user">
+  <input name="username" placeholder="username" required>
+  <input name="password" type="password" placeholder="password" required>
+  <button type="submit">Create</button>
+</form>
           <h3>Uploaded files</h3>
           <ul>
             ${
